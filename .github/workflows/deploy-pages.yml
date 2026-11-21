@@ -20,7 +20,25 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p _site/ar-runtime/wasm
-          cp index.html _site/index.html
+          python3 - <<'PYTHON'
+          import base64,hashlib,json,pathlib,re
+          root=pathlib.Path('_site')
+          media=root/'media';media.mkdir(exist_ok=True)
+          source=pathlib.Path('index.html').read_text()
+          assets={}
+          def external(match):
+              mime,payload=match.groups();data=base64.b64decode(payload);sha=hashlib.sha256(data).hexdigest()
+              suffix={'image/jpeg':'jpg','image/png':'png','image/webp':'webp','image/svg+xml':'svg'}[mime]
+              name=sha[:24]+'.'+suffix;(media/name).write_bytes(data)
+              assets[name]={'sha256':sha,'bytes':len(data),'mime':mime}
+              return 'media/'+name
+          html=re.sub(r'data:(image/[A-Za-z0-9.+-]+);base64,([A-Za-z0-9+/=]+)',external,source)
+          assert len(assets)>=30
+          assert not re.search(r'data:image/[^;]+;base64,',html)
+          (root/'index.html').write_text(html)
+          (root/'media-manifest.json').write_text(json.dumps(assets,indent=2))
+          print('Online HTML bytes:',len(html.encode()),'Original source preserved; unique image files:',len(assets))
+          PYTHON
           touch _site/.nojekyll
           package='@mediapipe/tasks-vision@0.10.21'
           for file in vision_bundle.mjs wasm/vision_wasm_internal.js wasm/vision_wasm_internal.wasm wasm/vision_wasm_nosimd_internal.js wasm/vision_wasm_nosimd_internal.wasm; do
